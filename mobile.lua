@@ -1,7 +1,7 @@
 require "android"
 require "socket"
-require "coroutine"
 
+--[[
 function printTableElements(Table)
     print("/*\t\t*/")
     for i,g in pairs(Table) do
@@ -9,30 +9,83 @@ function printTableElements(Table)
     end;
     print("/*\t\t*/")
 end;
+--]]
 
-function sendSensorsData(Socket, Sensors)
-    Socket:send("/*\t/\\ /\\ /\\ /\\ \t*/\n")
-    for i,g in pairs(Sensors) do
-        Socket:send(i .. "\t" ..  g .. "\n");
+function createRandomSensors()
+    local math = require "math"
+    local sensorsTable = {}
+    sensorsTable["Sensor 1"] = math.random()
+    sensorsTable["Sensor 2"] = math.random()
+    sensorsTable["Sensor 3"] = math.random()
+    sensorsTable["Sensor 4"] = math.random()
+    sensorsTable["Sensor 5"] = math.random()
+    sensorsTable["Sensor 6"] = math.random()
+    return sensorsTable
+end;
+
+function sendSensorsData(Sockets, Sensors)
+    for Index,Socket in pairs(Sockets) do
+        if not Socket:send(Sensors) then
+            Socket:close()
+            Sockets[Index] = nil;
+        end
     end;
-    Socket:send("/*\t-- -- -- --\t*/\n")
+end;
+
+function makeSensorsString(Sensors)
+    local eol = "\n"
+    -- local eol = "\n\r"
+    local string = "/*\t/\\ /\\ /\\ /\\ \t*/" .. eol
+    for i,g in pairs(Sensors) do
+        string = string .. i .. "\t" .. g .. eol
+    end;
+    string = string .. "/*\t-- -- -- --\t*/" .. eol
+    return string
+end;
+
+function createServerSocket(Port)
+    local server = assert(socket.bind("*", Port))
+    local ip, port = server:getsockname()
+    print("server address - " .. ip .. ":" .. port)
+    -- set 100 msec timeout on incoming connection wait
+    server:settimeout(0.1)
+    return server
+end;
+
+function prepareClientSocket(Socket)
+    -- disable Nagle's algorithm
+    Socket:setoption("tcp-nodelay", true)
+    -- keep alive to detect broken connections
+    Socket:setoption("keepalive", true)
+    -- set 10 sec timeout on send data
+    Socket:settimeout(10)
 end;
 
 function createSensorsServer()
-    local server   = assert(socket.bind("*", 6060))
-    local ip, port = server:getsockname()
-    print("server address - " .. ip .. ":" .. port)
+    local server   = createServerSocket(6060)
     android.startSensing()
+    -- wait for some electric sheep here
     android.sleep(1)
-    local client = server:accept()
-    client:setoption("tcp-nodelay", true)
+
+    local clientTable = {}
     while 1 do
+        local client = server:accept()
+        if client then
+            local ip, port = client:getpeername()
+            print("client address - " .. ip .. ":" .. port)
+            prepareClientSocket(client)
+            clientTable[client] = client
+        end
+
         local sensors = android.readSensors()
-        sendSensorsData(client, sensors.result)
-        -- printTableElements(sensors.result)
-        android.sleep(1)
+        sendSensorsData(clientTable, makeSensorsString(sensors.result))
+        -- local sensors = createRandomSensors()
+        -- sendSensorsData(clientTable, makeSensorsString(sensors))
     end;
+
     android.stopSensing()
+    -- wait for some electric sheep here
+    android.sleep(1)
     android.exit();
 end;
 
